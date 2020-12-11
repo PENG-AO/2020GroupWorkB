@@ -232,11 +232,10 @@ typedef enum direction
     DOWN_RIGHT = -0xF, DOWN_LEFT = -0x11
 } Direction;
 
-/* untested part
 int makeStep(Board board, Pos* dests, Pos from, Direction direction, int boundless)
 {
     int counter = 0;
-    Pos try = from + direction;
+    Pos try = from;
 
     do
     {
@@ -319,8 +318,8 @@ int getMovablePosOfRook(Board board, Pos* dests, Pos from, int promoted)
     int counter = 0;
     // boundless move
     counter += makeStep(board, dests + counter, from, UP, 1);
-    counter += makeStep(board, dests + counter, from, LEFT, 1);
     counter += makeStep(board, dests + counter, from, DOWN, 1);
+    counter += makeStep(board, dests + counter, from, LEFT, 1);
     counter += makeStep(board, dests + counter, from, RIGHT, 1);
     if (promoted)
     {
@@ -346,7 +345,6 @@ int getMovablePosOfPawn(Board board, Pos* dests, Pos from, int promoted)
     }
     return counter;
 }
-*/
 
 // return the revised half-board
 // piece: 0-5, 8-D
