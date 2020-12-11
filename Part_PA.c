@@ -11,11 +11,10 @@
 // FU = 8, HI, KK, GI, KI, OU
 
 typedef unsigned char Pos;
-typedef unsigned long long HalfBoard;
 typedef struct board
 {
-    HalfBoard attacker;
-    HalfBoard defender;
+    unsigned long long attacker;
+    unsigned long long defender;
 } Board;
 
 int max(int a, int b) { return (a > b) ? a : b; }
@@ -81,7 +80,28 @@ typedef struct move
     Pos from, to;
 } Move;
 
-unsigned int hash(char* s) { return *s ? *s + hash(s + 1) : 0; }
+void initMove(Move* mp, int type, int player, Pos from, Pos to)
+{
+    mp->type = type;
+    mp->player = player;
+    mp->from = from;
+    mp->to = to;
+}
+
+int hash(char* s)
+{
+    int type = 0;
+    while (*s) type += *s++;
+    switch (type)
+    {
+        case 155: return 0; // FU
+        case 145: return 1; // HI
+        case 150: return 2; // KK
+        case 144: return 3; // GI
+        case 148: return 4; // KI
+        default: return 5; // meaningless
+    }
+}
 
 // parse the input instruction
 void readMove(Move* mp, int player)
@@ -90,36 +110,23 @@ void readMove(Move* mp, int player)
     int from, to;
     scanf("%s", input);
 
-    mp->player = player;
     if (strlen(input) == 5)
     {
         // movement with promotion
         sscanf(input, "%2X%2X%*c", &from, &to);
-        mp->from = posImport(from, player);
-        mp->to = posImport(to, player);
-        mp->type = -1;
+        initMove(mp, -1, player, posImport(from, player), posImport(to, player));
     }
     else if (input[3] - 55 > 0xD)
     {
         // placement of a off-board piece
         sscanf(input, "%2X%s", &to, piece);
-        mp->to = posImport(to, player);
-        switch (hash(piece))
-        {
-            case 148: mp->type = 4; break; // KI
-            case 144: mp->type = 3; break; // GI
-            case 150: mp->type = 2; break; // KK
-            case 145: mp->type = 1; break; // HI
-            case 155: mp->type = 0; break; // FU
-        }
+        initMove(mp, hash(piece), player, 0x00, posImport(to, player));
     }
     else
     {
         // movement without promotion
         sscanf(input, "%2X%2X", &from, &to);
-        mp->from = posImport(from, player);
-        mp->to = posImport(to, player);
-        mp->type = -2;
+        initMove(mp, -2, player, posImport(from, player), posImport(to, player));
     }
 }
 
@@ -167,11 +174,13 @@ int isPromotableMove(Move move)
 // return 1 when from -> to is reachable
 int isReachable(Board board, Pos from, Pos to)
 {
+    return 0;
 }
 
 // return 1 when king is checked
 int isChecked(Board board, int player)
 {
+    return 0;
 }
 
 // return the detail of certain pos (in-board supposed)
@@ -193,7 +202,7 @@ int getPos(Board board, Pos pos)
 }
 
 // return the position of certain piece
-// piece: 0-5
+// piece: values in 0-5 representing different type of pieces
 // player: attacker or defender
 // for example:
 // board = 0x111213141521, 0xDDDCDBDAD945; piece = 0(FU); player = 0(ATTACKER)
@@ -219,6 +228,8 @@ int getPiece(Board board, int piece, int player)
 
 // movable places
 // dests: list of possible destinations (abundant length supposed)
+// piece: values in 0-5 representing different type of pieces
+// player: attacker or defender
 // direction: up -> 0x10, down -> -0x10, left -> -0x1, right -> 0x1
 //            up-right -> 0x11, up-left -> 0xF, down-left -> -0x11, down-right -> -0xF
 // boundless: 1 for true, 0 for false
@@ -346,8 +357,31 @@ int getMovablePosOfPawn(Board board, Pos* dests, Pos from, int promoted)
     return counter;
 }
 
+// distributer of different type of pieces
+int getMovablePos(Board board, Pos* dests, int piece, Pos from, int promoted)
+{
+    int counter = 0;
+    switch (piece)
+    {
+        case 0: counter += getMovablePosOfPawn(board, dests, from, promoted); break;
+        case 1: counter += getMovablePosOfRook(board, dests, from, promoted); break;
+        case 2: counter += getMovablePosOfBishop(board, dests, from, promoted); break;
+        case 3: counter += getMovablePosOfSilver(board, dests, from, promoted); break;
+        case 4: counter += getMovablePosOfGold(board, dests, from, promoted); break;
+        case 5: counter += getMovablePosOfKing(board, dests, from, promoted); break;
+        default: counter -= 1; break;
+    }
+    return counter;
+}
+
+int getMoveList(Board board, Pos* dests, int player)
+{
+    int counter = 0;
+    return counter;
+}
+
 // revise the board in place
-// piece: 0-5, 8-D
+// piece: values in 0-5, 8-D representing exact data place
 // to: destined postion
 void setPos(Board* bp, int piece, Pos to)
 {
