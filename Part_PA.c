@@ -243,7 +243,7 @@ int makeStep(Board board, Pos* dests, Pos from, Direction direction, int boundle
         try += direction;
         if (isValidPos(try) && getPos(board, try) == -1) *dests++ = try;
         else break;
-    } while (boundless && ++counter);
+    } while (++counter && boundless);
     
     return counter;
 }
