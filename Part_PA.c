@@ -203,7 +203,7 @@ int getPiece(Board board, int piece, int player)
     int res = 0x0;
     Pos* pos = (Pos*)&board;
 
-    // pos > 0x77 -> this pos belongs to attacker
+    // *pos < 0x77 -> this pos belongs to attacker
     // attacker? 0 0 1 1
     // player    0 1 0 1
     // xor       0 1 1 0
@@ -346,7 +346,7 @@ int getMovablePosOfPawn(Board board, Pos* dests, Pos from, int promoted)
     return counter;
 }
 
-// return the revised half-board
+// revise the board in place
 // piece: 0-5, 8-D
 // to: destined postion
 void setPos(Board* bp, int piece, Pos to)
