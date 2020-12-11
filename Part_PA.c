@@ -18,18 +18,6 @@ typedef struct board
     HalfBoard defender;
 } Board;
 
-// struct of move
-// type: 0-5 -> placement of a off-board piece (5 is impossible)
-//       -1 -> movement with promotion
-//       -2 -> movement without promotion
-// player: ATTACKER or DEFENDER
-// from, to: move the piece from * to *
-typedef struct move
-{
-    int type, player;
-    Pos from, to;
-} Move;
-
 int max(int a, int b) { return (a > b) ? a : b; }
 int min(int a, int b) { return (a < b) ? a : b; }
 // swich the half-pos expression between digit and alphabet: 2 -> A -> 2
@@ -80,6 +68,18 @@ Pos posExport(Pos p)
     p = pos2promoted(pos2digit(p));
     return p & 0xF0 | ((Pos)(p & 0xF) + 1);
 }
+
+// struct of move
+// type: 0-5 -> placement of a off-board piece (5 is impossible)
+//       -1 -> movement with promotion
+//       -2 -> movement without promotion
+// player: ATTACKER or DEFENDER
+// from, to: move the piece from * to *
+typedef struct move
+{
+    int type, player;
+    Pos from, to;
+} Move;
 
 unsigned int hash(char* s) { return *s ? *s + hash(s + 1) : 0; }
 
@@ -160,6 +160,7 @@ int isPromotableMove(Move move)
     {
         case ATTACKER: return (move.from >> 4 == 0x5) || (move.to >> 4 == 0x5);
         case DEFENDER: return (move.from >> 4 == 0x9) || (move.to >> 4 == 0x9);
+        default: return -1; // meaningless
     }
 }
 
@@ -239,9 +240,9 @@ int makeStep(Board board, Pos* dests, Pos from, Direction direction, int boundle
 
     do
     {
-        (isValidPos(try) && getPos(board, try) == -1) ? try = direction + (*dests++ = try) : break;
-        // (isValidPos(try) && getPos(board, try) == -1) ? *(dests++) = try : break;
-        // try += direction;
+        try += direction;
+        if (isValidPos(try) && getPos(board, try) == -1) *dests++ = try;
+        else break;
     } while (boundless && ++counter);
     
     return counter;
