@@ -17,7 +17,11 @@ typedef unsigned char Pos;
 //              0021 attacker's placement, 00 -> pawn, 21 -> at
 //              ABBC defender's move, AB -> from, BC -> to, BC -> no promotion
 //              AB93 defender's move, AB -> from, 93 -> to, 93 -> promoted
-//              00CD defender's placement, 00 -> pawn, CD -> at
+//              01CD defender's placement, 01 -> rook, CD -> at
+// methods to obtain some informations
+//     first 2 digits: move >> 8
+//     second 2 digits: move & 0xFF
+//     placement: (move >> 8) < 0x5
 typedef unsigned short Move;
 // short for monochromatic board
 // type of compressed board only represents the information of point without it's type and belongings
@@ -65,6 +69,7 @@ MonoBoard makeStep(Board board, Pos pos, int direction);
 MonoBoard getMoveMask(Pos pos, Piece piece, int promoted);
 MonoBoard getMovableMap(Board board, Pos pos, Piece piece);
 MonoBoard getPlacableMap(Board board, Piece piece, int player);
+MonoBoard getDangerMap(Board board, int player);
 int getMoveList(Board board, Move* moves, int player);
 
 void setPos(Board* bp, int place, Pos to);
@@ -141,12 +146,12 @@ int hashPiece(char* piece)
     while (*piece) type += *piece++;
     switch (type)
     {
-        case 155: return 0; // FU
-        case 145: return 1; // HI
-        case 150: return 2; // KK
-        case 144: return 3; // GI
-        case 148: return 4; // KI
-        default: return 5; // meaningless
+        case 155: return 0; // pawn
+        case 145: return 1; // rook
+        case 150: return 2; // bishop
+        case 144: return 3; // silver general
+        case 148: return 4; // gold general
+        default: return 5; // king (meaningless)
     }
 }
 
@@ -236,21 +241,12 @@ int isPromotableMove(Board board, Move move)
 int isChecked(Board board, int player)
 {
     Pos king = (getPiece(board, KING) >> (player == ATTACKER ? 0 : 8)) & 0xFF;
-    Pos* p = (Pos*)&board;
-    // competitor's reachable place
-    MonoBoard dangerRealm = 0x0;
-
-    for (int i = 0; i < 6; i++, p++)
-    {
-        if (getPlayer(*p) != player) dangerRealm |= getMovableMap(board, *p, i);
-        if (getPlayer(*(p + 8)) != player) dangerRealm |= getMovableMap(board, *(p + 8), i);
-    }
-
-    return !!(dangerRealm & (1 << pos2idx(king)));
+    MonoBoard dangermap = getDangerMap(board, player);
+    return !!(dangermap & (1 << pos2idx(king)));
 }
 
 // return 1 when the given move will make player's king get checked else 0
-//          the one who made the give move ↵
+//        the one who made the given move ↵
 // (legal move supposed)
 int isCheckedMove(Board board, Move move)
 {
@@ -262,15 +258,20 @@ int isCheckedMove(Board board, Move move)
 // AKA 詰み
 int isDecided(Board board, int player)
 {
-    /* codes here */
+    Pos king = (getPiece(board, KING) >> (player == DEFENDER ? 0 : 8)) & 0xFF;
+    MonoBoard dangermap = getDangerMap(board, !player);
+    // competitor has not got checked (purpose of the line below is avoiding generate dangermap twice)
+    if (!(dangermap & (1 << pos2idx(king)))) return 0;
+    return !(~dangermap & getMovableMap(board, king, KING));
 }
 
 // return 1 when the given move will make competitor's king can not avoid being checked else 0
-// competitor of the one who made the give move ↵
+// competitor of the one who made the given move ↵
 // (legal move supposed)
 int isDecidedMove(Board board, Move move)
 {
-    /* codes here */
+    setBoard(&board, move);
+    return isDecided(board, getPlayer(move));
 }
 
 // return the ownership of the given move or pos
@@ -409,10 +410,27 @@ MonoBoard getMovableMap(Board board, Pos pos, Piece piece)
 }
 
 // placable map
+// illegal placement handled here
 // return a monoboard with placable pos marked
 MonoBoard getPlacableMap(Board board, Piece piece, int player)
 {
     /* codes here */
+}
+
+// danger map
+// return a monoboard with pos which is reachable for competitor marked
+MonoBoard getDangerMap(Board board, int player)
+{
+    Pos* p = (Pos*)&board;
+    MonoBoard dangermap = 0x0;
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (getPlayer(*p) != player) dangermap |= getMovableMap(board, *p, i);
+        if (getPlayer(*(p + 8)) != player) dangermap |= getMovableMap(board, *(p + 8), i);
+    }
+
+    return dangermap;
 }
 
 // move list
@@ -421,7 +439,46 @@ MonoBoard getPlacableMap(Board board, Piece piece, int player)
 // return the number of possible movement
 int getMoveList(Board board, Move* moves, int player)
 {
-    /* codes here */
+    int counter = 0;
+    Pos* p = (Pos*)&board, pos;
+    Move move;
+    MonoBoard markedmap;
+
+    for (int i = 0; i < 6; i++, p++)
+    {
+        for (int j = 0; j < 9; j += 8)
+        {
+            pos = *(p + j);
+            if (getPlayer(pos) != player) continue;
+
+            if (pos == player * 0xFF)
+            {
+                // placement
+                pos = i;
+                markedmap = getPlacableMap(board, i, player);
+            }
+            else
+            {
+                // movement
+                markedmap = getMovableMap(board, pos, i);
+            }
+            // traverse the marked map
+            for (int k = 0; k < 25; k++)
+            {
+                if (!((markedmap >> k) & 1)) continue;
+                move = pos << 8 | idx2pos(k, player);
+                if (isCheckedMove(board, move)) continue;
+                *(moves + counter++) = move;
+                if (isPromotableMove(board, move))
+                {
+                    // add promotable move additionally
+                    *(moves + counter++) = pos << 8 | pos2promoted(move & 0xFF);
+                }
+            }
+        }
+    }
+
+    return counter;
 }
 
 // revise the board in place
