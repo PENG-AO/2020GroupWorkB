@@ -33,10 +33,11 @@ int convert2digit(int p) { return (p < 0x7) ? p : (p - 0x9); }
 int convert2alpha(int p) { return (p > 0x7) ? p : (p + 0x9); }
 // swich the half-pos expression between digit and alphabet: 1 -> A -> 1
 int convert2opposite(int p) { return p + ((p < 0x7) ? 0x9 : -0x9); }
+int conver2symmetric(int p) { return 2 * ((p < 0x7) ? 0x3 : 0xC) - p; }
 
 void initBoard(Board* board);
-MonoBoard monoizeBoard(Board board);
-MonoBoard flipMonoBoard(MonoBoard monoboard);
+MonoBoard monoizedBoard(Board board);
+MonoBoard symmetrizedMonoBoard(MonoBoard monoboard);
 
 Pos pos2digit(Pos pos);
 Pos pos2alpha(Pos pos);
@@ -56,54 +57,54 @@ int isPromotableMove(Board board, Move move);
 int isChecked(Board board, int player);
 int isCheckedMove(Board board, Move move);
 int isDecided(Board board, int player);
-int isPlacable(Board board, Pos pos, int piece);
+int isDecidedMove(Board board, Move move);
 
 int getPlayer(Move move);
 int getPos(Board board, Pos pos);
 int getPiece(Board board, int piece);
 
+MonoBoard makeStep(MonoBoard monoboard, Pos pos, int direction);
 MonoBoard getMoveMask(Pos pos, int piece, int promoted);
-MonoBoard getMovableMap(Board board, Pos pos, int piece, int promoted);
+MonoBoard getMovableMap(Board board, Pos pos, int piece, int player);
 MonoBoard getPlacableMap(Board board, int piece, int player);
+int getMoveList(Board board, Move* moves, int player);
 
 void setPos(Board* bp, int piece, Pos to);
 void setBoard(Board* bp, Move move);
 
 void initBoard(Board* bp)
 {
-    // bp->attacker = 0x111213141521;
-    // bp->defender = 0xDDDCDBDAD9CD;
     bp->attacker = 0x111213141521;
     bp->defender = 0xEEEDECEBEADE;
 }
 
 // short for monochromatize board
-MonoBoard monoizeBoard(Board board)
+MonoBoard monoizedBoard(Board board)
 {
-    MonoBoard monoboard = 0x0, mask = 0x1;
+    MonoBoard monoboard = 0x0;
     Pos* p = (Pos*)&board;
 
     for (int i = 0; i < 6; i++, p++)
     {
-        monoboard |= mask << pos2idx(*p);
-        monoboard |= mask << pos2idx(*(p + 8));
+        monoboard |= 1 << pos2idx(*p);
+        monoboard |= 1 << pos2idx(*(p + 8));
     }
 
     return monoboard;
 }
 
-MonoBoard flipMonoBoard(MonoBoard monoboard)
+MonoBoard symmetrizedMonoBoard(MonoBoard monoboard)
 {
-    MonoBoard flipped = 0x0;
+    MonoBoard symmetrized = 0x0;
 
     for (int i = 0; i < 5; i++)
     {
-        flipped <<= 5;
-        flipped |= (monoboard & 0x1F);
+        symmetrized <<= 5;
+        symmetrized |= (monoboard & 0x1F);
         monoboard >>= 5;
     }
 
-    return flipped;
+    return symmetrized;
 }
 
 // return a pos-expression of given pos in digit
@@ -220,10 +221,7 @@ int isValidPos(Pos pos)
 }
 
 // return 1 when the piece at the given pos is promoted else 0
-int isPromoted(Pos pos)
-{
-    return ((pos >> 4) < 0x7) ^ ((pos & 0xF) < 0x7);
-}
+int isPromoted(Pos pos) { return ((pos >> 4) < 0x7) ^ ((pos & 0xF) < 0x7); }
 
 // return 1 when the given move is promotale basing on it's piece type else 0
 int isPromotableMove(Board board, Move move)
@@ -246,13 +244,12 @@ int isPromotableMove(Board board, Move move)
 int isChecked(Board board, int player)
 {
     /* codes here */
-    return 0;
 }
 
+// return 1 when the given move will make player's king get checked else 0
 int isCheckedMove(Board board, Move move)
 {
     /* codes here */
-    return 0;
 }
 
 // return 1 when competitor's king can not avoid being checked else 0
@@ -260,15 +257,12 @@ int isCheckedMove(Board board, Move move)
 int isDecided(Board board, int player)
 {
     /* codes here */
-    reutrn 0;
 }
 
-// return 1 when piece can be placed at pos else 0
-// piece: values in 0-5 representing different type of pieces
-int isPlacable(Board board, Pos pos, int piece)
+// return 1 when the given move will make competitor's king can not avoid being checked else 0
+int isDecidedMove(Board board, Move move)
 {
     /* codes here */
-    return 1;
 }
 
 // return the ownership of the given move or pos
@@ -317,6 +311,22 @@ MonoBoard helpermask[5] = {0x739CE7, 0xF7BDEF, 0x1FFFFFF, 0x1EF7BDE, 0x1CE739C};
 // 00000  00100  10001  00000  00000  00000
 // masks of rook and bishop are useless, for normal move is not suitable
 MonoBoard piecemask[6] = {0x20000, 0x426C84, 0x1150151, 0x70140, 0x72880, 0x729C0};
+// list of directional offsets
+// ↑: 0x10, ↓: -0x10, ←: -0x1, →: 0x1, ↗︎: 0x11, ↖︎: 0xF, ↘︎: -0xF, ↙︎: -0x11
+// directions[0: 4] for rook, directions[4: 8] for bishop
+int directions[8] = {0x10, -0x10, -0x1, 0x1, 0x11, 0xF, -0xF, -0x11};
+
+// return a marked movable line on the given direction
+// monoboard: empty pos marked
+// directions
+// special treatment for rook and bishop for their movements will probably cross other pieces sometimes
+MonoBoard makeStep(MonoBoard monoboard, Pos pos, int direction)
+{
+    pos += direction;
+    if (!isValidPos(pos)) return 0x0;
+    if (!(monoboard & (1 << pos2idx(pos)))) return 0x0;
+    return (1 << pos2idx(pos)) | makeStep(monoboard, pos, direction);
+}
 
 // movable mask
 // not feasible for rook and bishop
@@ -350,15 +360,55 @@ MonoBoard getMoveMask(Pos pos, int piece, int promoted)
 
 // movable map
 // return a monoboard with movable pos marked
-MonoBoard getMovableMap(Board board, Pos pos, int piece, int promoted)
+MonoBoard getMovableMap(Board board, Pos pos, int piece, int player)
 {
-    // rook
-    if (piece == 1) return (~monoizeBoard(board)) & /* codes here */;
+    MonoBoard monoboard = ~monoizedBoard(board), stepmap = 0x0;
+    int promoted = isPromoted(pos);
+    // if player is defender both pos, mononboard and stepmap will be symmetrized during the whole procedure
+    // for all move mask was defaulted to attacker's side
+    // (especially important when the movable map is not vertically symmetric)
+    if (player == DEFENDER)
+    {
+        pos = conver2symmetric(pos >> 4) << 4 | pos & 0xF;
+        monoboard = symmetrizedMonoBoard(monoboard);
+    }
 
-    // bishop
-    if (piece == 2) return (~monoizeBoard(board)) & /* codes here */;
+    if (piece == 1)
+    {
+        // rook
+        for (int i = 0; i < 4; i++) stepmap |= makeStep(monoboard, pos, directions[i]);
+        if (promoted) stepmap |= (monoboard & getMoveMask(pos, 5, 0));
+    }
+    else if (piece == 2)
+    {
+        // bishop
+        for (int i = 4; i < 8; i++) stepmap |= makeStep(monoboard, pos, directions[i]);
+        if (promoted) stepmap |= (monoboard & getMoveMask(pos, 5, 0));
+    }
+    else
+    {
+        // others
+        stepmap = monoboard & getMoveMask(pos, piece, promoted);
+    }
+    
+    // return symmetrized stepmap when player is defeneder
+    return (player == DEFENDER) ? symmetrizedMonoBoard(stepmap) : stepmap;
+}
 
-    return (~monoizeBoard(board)) & getMoveMask(pos, piece, promoted);
+// placable map
+// return a monoboard with placable pos marked
+MonoBoard getPlacableMap(Board board, int piece, int player)
+{
+    /* codes here */
+}
+
+// move list
+// moves: list of possible movements (abundant length supposed)
+// player: attacker or defender
+// return the number of possible movement
+int getMoveList(Board board, Move* moves, int player)
+{
+    /* codes here */
 }
 
 // revise the board in place
