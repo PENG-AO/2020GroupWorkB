@@ -250,9 +250,12 @@ int isChecked(Board board, int player)
 }
 
 // return 1 when the given move will make player's king get checked else 0
+//          the one who made the give move ↵
+// (legal move supposed)
 int isCheckedMove(Board board, Move move)
 {
-    /* codes here */
+    setBoard(&board, move);
+    return isChecked(board, getPlayer(move));
 }
 
 // return 1 when competitor's king can not avoid being checked else 0
@@ -263,6 +266,8 @@ int isDecided(Board board, int player)
 }
 
 // return 1 when the given move will make competitor's king can not avoid being checked else 0
+// competitor of the one who made the give move ↵
+// (legal move supposed)
 int isDecidedMove(Board board, Move move)
 {
     /* codes here */
@@ -424,7 +429,7 @@ int getMoveList(Board board, Move* moves, int player)
 // to: destined postion
 void setPos(Board* bp, int place, Pos to) { *((Pos*)bp + place) = to; }
 
-// revise the board in place
+// revise the board in place (legal move supposed)
 void setBoard(Board* bp, Move move)
 {
     int piece;
@@ -444,6 +449,6 @@ void setBoard(Board* bp, Move move)
         if (piece != -1) setPos(bp, piece, getPlayer(move) * 0xFF);
         // move the piece at start pos to destination
         piece = getPos(*bp, move >> 8);
-        setPos(bp, piece, move && 0xFF);
+        setPos(bp, piece, move & 0xFF);
     }
 }
