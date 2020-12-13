@@ -5,10 +5,10 @@
 #define ATTACKER 0
 #define DEFENDER 1
 
-// attacker's pieces
-// FU = 0, HI, KK, GI, KI, OU
-// defender's pieces
-// FU = 8, HI, KK, GI, KI, OU
+// enum of piece type (also equals to it's address offset from &Board)
+// offsets of attacker's pieces: 0-6
+// offsets of defender's pieces: 8-14
+typedef enum piece { PAWN = 0, ROOK, BISHOP, SILVER, GOLD, KING } Piece;
 
 typedef unsigned char Pos;
 // type of move
@@ -33,11 +33,9 @@ int convert2digit(int p) { return (p < 0x7) ? p : (p - 0x9); }
 int convert2alpha(int p) { return (p > 0x7) ? p : (p + 0x9); }
 // swich the half-pos expression between digit and alphabet: 1 -> A -> 1
 int convert2opposite(int p) { return p + ((p < 0x7) ? 0x9 : -0x9); }
-int conver2symmetric(int p) { return 2 * ((p < 0x7) ? 0x3 : 0xC) - p; }
 
 void initBoard(Board* board);
-MonoBoard monoizedBoard(Board board);
-MonoBoard symmetrizedMonoBoard(MonoBoard monoboard);
+MonoBoard monoizedBoard(Board board, int hide);
 
 Pos pos2digit(Pos pos);
 Pos pos2alpha(Pos pos);
@@ -49,7 +47,7 @@ Pos posExport(Pos pos);
 
 int hashPiece(char* piece);
 Move readMove(int player);
-void printMove(Move mp);
+void printMove(Move move);
 
 int isValidPos(Pos pos);
 int isPromoted(Pos pos);
@@ -61,50 +59,44 @@ int isDecidedMove(Board board, Move move);
 
 int getPlayer(Move move);
 int getPos(Board board, Pos pos);
-int getPiece(Board board, int piece);
+int getPiece(Board board, Piece piece);
 
-MonoBoard makeStep(MonoBoard monoboard, Pos pos, int direction);
-MonoBoard getMoveMask(Pos pos, int piece, int promoted);
-MonoBoard getMovableMap(Board board, Pos pos, int piece, int player);
-MonoBoard getPlacableMap(Board board, int piece, int player);
+MonoBoard makeStep(Board board, Pos pos, int direction);
+MonoBoard getMoveMask(Pos pos, Piece piece, int promoted);
+MonoBoard getMovableMap(Board board, Pos pos, Piece piece);
+MonoBoard getPlacableMap(Board board, Piece piece, int player);
 int getMoveList(Board board, Move* moves, int player);
 
-void setPos(Board* bp, int piece, Pos to);
+void setPos(Board* bp, int place, Pos to);
 void setBoard(Board* bp, Move move);
 
 void initBoard(Board* bp)
 {
+    //    PAWN ROOK BISHOP SILVER GOLD KING
+    // bp +0   +1   +2     +3     +4   +5
+    //    21   15   14     13     12   11 (belongs to attacker at first)
+    // bp +8   +9   +10    +11    +12  +13
+    //    DE   EA   EB     EC     ED   EE (belongs to defender at first)
     bp->attacker = 0x111213141521;
     bp->defender = 0xEEEDECEBEADE;
 }
 
 // short for monochromatize board
-MonoBoard monoizedBoard(Board board)
+// hide: 0 -> mark all
+//       1 -> hide attacker's piece
+//       2 -> hide defender's piece
+MonoBoard monoizedBoard(Board board, int hide)
 {
     MonoBoard monoboard = 0x0;
     Pos* p = (Pos*)&board;
 
     for (int i = 0; i < 6; i++, p++)
     {
-        monoboard |= 1 << pos2idx(*p);
-        monoboard |= 1 << pos2idx(*(p + 8));
+        if (!(hide && getPlayer(*p) == (hide - 1))) monoboard |= 1 << pos2idx(*p);
+        if (!(hide && getPlayer(*(p + 8)) == (hide - 1))) monoboard |= 1 << pos2idx(*(p + 8));
     }
 
     return monoboard;
-}
-
-MonoBoard symmetrizedMonoBoard(MonoBoard monoboard)
-{
-    MonoBoard symmetrized = 0x0;
-
-    for (int i = 0; i < 5; i++)
-    {
-        symmetrized <<= 5;
-        symmetrized |= (monoboard & 0x1F);
-        monoboard >>= 5;
-    }
-
-    return symmetrized;
 }
 
 // return a pos-expression of given pos in digit
@@ -239,11 +231,22 @@ int isPromotableMove(Board board, Move move)
     }
 }
 
-// return 1 when player's king has got checked (king can be taken next) else 0
+// return 1 when player's king has got checked (king might be taken next) else 0
 // AKA 王手
 int isChecked(Board board, int player)
 {
-    /* codes here */
+    Pos king = (getPiece(board, KING) >> (player == ATTACKER ? 0 : 8)) & 0xFF;
+    Pos* p = (Pos*)&board;
+    // competitor's reachable place
+    MonoBoard dangerRealm = 0x0;
+
+    for (int i = 0; i < 6; i++, p++)
+    {
+        if (getPlayer(*p) != player) dangerRealm |= getMovableMap(board, *p, i);
+        if (getPlayer(*(p + 8)) != player) dangerRealm |= getMovableMap(board, *(p + 8), i);
+    }
+
+    return !!(dangerRealm & (1 << pos2idx(king)));
 }
 
 // return 1 when the given move will make player's king get checked else 0
@@ -294,7 +297,7 @@ int getPos(Board board, Pos pos)
 // return 4521 when piece = 0(pawn)
 // return 0014 when piece = 2(bishop)
 // return EE11 when piece = 5(king)
-int getPiece(Board board, int piece)
+int getPiece(Board board, Piece piece)
 {
     Pos* p = (Pos*)&board + piece;
     return *(p + 8) << 8 | *p;
@@ -303,34 +306,50 @@ int getPiece(Board board, int piece)
 // rshift + 2
 // 11100 11110 11111 01111 00111
 MonoBoard helpermask[5] = {0x739CE7, 0xF7BDEF, 0x1FFFFFF, 0x1EF7BDE, 0x1CE739C};
-// pawn   rook   bishop silver gold   king
-// 00000  00100  10001  00000  00000  00000
-// 00100  00100  01010  01110  01110  01110
-// 00000  11011  00000  00000  01010  01010
-// 00000  00100  01010  01010  00100  01110
-// 00000  00100  10001  00000  00000  00000
-// masks of rook and bishop are useless, for normal move is not suitable
-MonoBoard piecemask[6] = {0x20000, 0x426C84, 0x1150151, 0x70140, 0x72880, 0x729C0};
+// facing up (for attacker)
+// pawn  rook  bishop silver gold   king
+// 00000 ----- -----  00000  00000  00000
+// 00100 ----- -----  01110  01110  01110
+// 00000 ----- -----  00000  01010  01010
+// 00000 ----- -----  01010  00100  01110
+// 00000 ----- -----  00000  00000  00000
+// facing down (for defender)
+// pawn  rook  bishop silver gold   king
+// 00000 ----- -----  00000  00000  00000
+// 00000 ----- -----  01010  00100  01110
+// 00000 ----- -----  00000  01010  01010
+// 00100 ----- -----  01110  01110  01110
+// 00000 ----- -----  00000  00000  00000
+// masks of rook and bishop are useless, for normal shift is not suitable
+MonoBoard piecemask[16] = {
+    0x20000, 0x0, 0x0, 0x70140, 0x72880, 0x729C0, 0x0, 0x0,
+    0x00080, 0x0, 0x0, 0x501C0, 0x229C0, 0x729C0, 0x0, 0x0
+};
 // list of directional offsets
 // ↑: 0x10, ↓: -0x10, ←: -0x1, →: 0x1, ↗︎: 0x11, ↖︎: 0xF, ↘︎: -0xF, ↙︎: -0x11
 // directions[0: 4] for rook, directions[4: 8] for bishop
 int directions[8] = {0x10, -0x10, -0x1, 0x1, 0x11, 0xF, -0xF, -0x11};
 
 // return a marked movable line on the given direction
-// monoboard: empty pos marked
-// directions
 // special treatment for rook and bishop for their movements will probably cross other pieces sometimes
-MonoBoard makeStep(MonoBoard monoboard, Pos pos, int direction)
+MonoBoard makeStep(Board board, Pos pos, int direction)
 {
+    MonoBoard emptymap = ~monoizedBoard(board, 0), mask = 0x1;
     pos += direction;
+    // out of board
     if (!isValidPos(pos)) return 0x0;
-    if (!(monoboard & (1 << pos2idx(pos)))) return 0x0;
-    return (1 << pos2idx(pos)) | makeStep(monoboard, pos, direction);
+    mask <<= pos2idx(pos);
+    // free pos
+    if (emptymap & mask) return mask | makeStep(board, pos, direction);
+    // takable competitor's piece
+    if (getPlayer(pos) != getPlayer(((Pos*)&board)[getPos(board, pos)])) return mask;
+    // own side piece
+    return 0x0;
 }
 
 // movable mask
 // not feasible for rook and bishop
-MonoBoard getMoveMask(Pos pos, int piece, int promoted)
+MonoBoard getMoveMask(Pos pos, Piece piece, int promoted)
 {
     // move -2 ≤ m ≤ 2 lines upwards(+) or downwards(-): << m * 5
     // move -2 ≤ n ≤ 2 lines right(+) or left(-): << n then & helpermask[n + 2]
@@ -341,17 +360,17 @@ MonoBoard getMoveMask(Pos pos, int piece, int promoted)
     pos = pos2digit(pos);
 
     // promoted silver general and pawn here, return move mask of gold general
-    if (promoted && piece < 4) return getMoveMask(pos, 4, 0);
+    if (promoted && piece < 4) return getMoveMask(pos, GOLD, 0);
 
     rshift = (int)(pos & 0xF) - 3;
     shift = ((int)(pos >> 4) - 3) * 5 + rshift;
     if (shift < 0)
     {
-        mask |= piecemask[piece] >> -shift;
+        mask |= piecemask[piece + getPlayer(pos) * 8] >> -shift;
     }
     else
     {
-        mask |= piecemask[piece] << shift;
+        mask |= piecemask[piece + getPlayer(pos) * 8] << shift;
     }
     // remove dislocations
     mask &= helpermask[rshift + 2];
@@ -360,44 +379,33 @@ MonoBoard getMoveMask(Pos pos, int piece, int promoted)
 
 // movable map
 // return a monoboard with movable pos marked
-MonoBoard getMovableMap(Board board, Pos pos, int piece, int player)
+MonoBoard getMovableMap(Board board, Pos pos, Piece piece)
 {
-    MonoBoard monoboard = ~monoizedBoard(board), stepmap = 0x0;
+    // hide competitor's piece in order to show the pos that might take competitor's piece
+    MonoBoard monoboard = ~monoizedBoard(board, !getPlayer(pos) + 1), movablemap = 0x0;
     int promoted = isPromoted(pos);
-    // if player is defender both pos, mononboard and stepmap will be symmetrized during the whole procedure
-    // for all move mask was defaulted to attacker's side
-    // (especially important when the movable map is not vertically symmetric)
-    if (player == DEFENDER)
-    {
-        pos = conver2symmetric(pos >> 4) << 4 | pos & 0xF;
-        monoboard = symmetrizedMonoBoard(monoboard);
-    }
 
-    if (piece == 1)
+    if (piece == ROOK)
     {
-        // rook
-        for (int i = 0; i < 4; i++) stepmap |= makeStep(monoboard, pos, directions[i]);
-        if (promoted) stepmap |= (monoboard & getMoveMask(pos, 5, 0));
+        for (int i = 0; i < 4; i++) movablemap |= makeStep(board, pos, directions[i]);
+        if (promoted) movablemap |= (monoboard & getMoveMask(pos, KING, 0));
     }
-    else if (piece == 2)
+    else if (piece == BISHOP)
     {
-        // bishop
-        for (int i = 4; i < 8; i++) stepmap |= makeStep(monoboard, pos, directions[i]);
-        if (promoted) stepmap |= (monoboard & getMoveMask(pos, 5, 0));
+        for (int i = 4; i < 8; i++) movablemap |= makeStep(board, pos, directions[i]);
+        if (promoted) movablemap |= (monoboard & getMoveMask(pos, KING, 0));
     }
     else
     {
-        // others
-        stepmap = monoboard & getMoveMask(pos, piece, promoted);
+        movablemap = monoboard & getMoveMask(pos, piece, promoted);
     }
     
-    // return symmetrized stepmap when player is defeneder
-    return (player == DEFENDER) ? symmetrizedMonoBoard(stepmap) : stepmap;
+    return movablemap;
 }
 
 // placable map
 // return a monoboard with placable pos marked
-MonoBoard getPlacableMap(Board board, int piece, int player)
+MonoBoard getPlacableMap(Board board, Piece piece, int player)
 {
     /* codes here */
 }
@@ -412,12 +420,9 @@ int getMoveList(Board board, Move* moves, int player)
 }
 
 // revise the board in place
-// piece: values in 0-5, 8-D representing exact data place
+// place: values in 0-5, 8-D representing exact data place
 // to: destined postion
-void setPos(Board* bp, int piece, Pos to)
-{
-    *((Pos*)bp + piece) = to;
-}
+void setPos(Board* bp, int place, Pos to) { *((Pos*)bp + place) = to; }
 
 // revise the board in place
 void setBoard(Board* bp, Move move)
@@ -427,7 +432,7 @@ void setBoard(Board* bp, Move move)
     if ((move >> 8) < 0x5)
     {
         // placement of a off-board piece
-        piece = getPiece(board, move >> 8);
+        piece = getPiece(*bp, move >> 8);
         if ((piece & 0xFF) == getPlayer(move) * 0xFF) setPos(bp, move >> 8, move & 0xFF);
         if ((piece >> 8) == getPlayer(move) * 0xFF) setPos(bp, (int)(move >> 8) + 8, move & 0xFF);
     }
