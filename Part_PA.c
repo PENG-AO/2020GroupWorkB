@@ -419,13 +419,14 @@ MonoBoard getPlacableMap(Board board, Piece piece, int player)
     if (piece != PAWN) return placablemap;
     // topmost horizontal line: 0x1F00000, bottommost horizontal line: 0x1F
     // leftmots vertival line: 0x108421
-    int pos = getPiece(board, piece);
+    int pos = getPiece(board, piece), shift;
     if ((pos >> 8) == player * 0xFF) pos &= 0xFF;
     else if ((pos & 0xFF) == player * 0xFF) pos >>= 8;
     // avoid attacker and defender's pawns at the same vertical line (二歩)
     if (getPlayer(pos) != player && !isPromoted(pos))
     {
-        placablemap &= ~(0x108421 << ((int)(pos & 0xF) - (player == ATTACKER ? 0x1 : 0xA)));
+        shift = (int)(pos & 0xF) - (player == ATTACKER ? 0xA : 0x1);
+        placablemap &= ~(0x108421 << shift);
     }
     // avoid placing pawn at competitor's position (陣地)
     placablemap &= ~(player == ATTACKER ? 0x1F00000 : 0x1F);
