@@ -224,8 +224,9 @@ int isPromoted(Pos pos) { return ((pos >> 4) < 0x7) ^ ((pos & 0xF) < 0x7); }
 // return 1 when the given move is promotale basing on it's piece type else 0
 int isPromotableMove(Board board, Move move)
 {
-    // for placement, getPos will return -1 because there is no piece at 00 01 02 03 04
-    // -1 % 0x8 = 7 > 3, thus this function will not recognize placement as a promotable move
+    // return 0 if the given move is not a movement but a placemet (00 - 04)
+    if (move >> 8 < 0x6) return 0;
+    // return 0 if it is not a promotable piece (king, gold)
     if (getPos(board, move >> 8) % 0x8 > 3) return 0;
     // return 0 if the given move is already promoted
     if (isPromoted(move >> 8)) return 0;
@@ -431,7 +432,22 @@ MonoBoard getPlacableMap(Board board, Piece piece, int player)
     // avoid placing pawn at competitor's position (陣地)
     placablemap &= ~(player == ATTACKER ? 0x1F00000 : 0x1F);
     // avoid making decided move by placing a off-board pawn (打ち歩詰め)
-    /* codes here */
+    // using function isDecidedMove is feasible even though it seems like there is an endless loop
+    // (isDecidedMove⓪ -> isDecided① -> getMoveList② -> getPlacableMap③ -> isDecidedMove④)
+    // for example basing on attacker's side, there are 3 typical conditions
+    // (A) 00xx or xx00: attacker has a placable pawn (xx -> an on-board pawn whichever it belongs to)
+    // (B) 00FF or FF00: both attacker and defender has a placable pawn
+    // (C) 0000: attacker has 2 placable pawns
+    // in condition (A), getPlacableMap③ will return immediately whenever it was called
+    //     for there is not placable pawn any more, as a result no endless loop
+    // in condition (B), after placing attacker's pawn, it will turn into xxFF or FFxx which is condition (A) for defender
+    // in condition (C), after placing attacker's first pawn, it will turn into 00xx which exactly is condition (A)
+    for (int i = 0; i < 25; i++)
+    {
+        if (!(placablemap & (1 << i))) continue;
+        if (isDecidedMove(board, idx2pos(i, player))) placablemap &= ~(1 << i);
+    }
+
     return placablemap;
 }
 
@@ -487,9 +503,12 @@ int getMoveList(Board board, Move* moves, int player)
             // traverse the marked map
             for (int k = 0; k < 25; k++)
             {
-                if (!((markedmap >> k) & 1)) continue;
+                if (!(markedmap & (1 << k))) continue;
                 move = pos << 8 | idx2pos(k, player);
                 if (isCheckedMove(board, move)) continue;
+
+                /* codes for repetition check here */
+
                 // skip move if it's pawn's promotable move
                 if (!(isPromotableMove(board, move) && i == PAWN))
                 {
