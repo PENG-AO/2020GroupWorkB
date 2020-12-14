@@ -70,7 +70,6 @@ MonoBoard makeStep(Board board, Pos pos, int direction);
 MonoBoard getMoveMask(Pos pos, Piece piece, int promoted);
 MonoBoard getMovableMap(Board board, Pos pos, Piece piece);
 MonoBoard getPlacableMap(Board board, Piece piece, int player);
-MonoBoard getDangerMap(Board board, int player);
 int getMoveList(Board board, Move* moves, int player);
 
 void setPos(Board* bp, int place, Pos to);
@@ -96,7 +95,7 @@ MonoBoard monoizedBoard(Board board, int hide)
     MonoBoard monoboard = 0x0;
     Pos* p = (Pos*)&board;
 
-    for (int i = 0; i < 6; i++, p++)
+    for (int i = PAWN; i <= KING; i++, p++)
     {
         if (!(hide && getPlayer(*p) == (hide - 1))) monoboard |= 1 << pos2idx(*p);
         if (!(hide && getPlayer(*(p + 8)) == (hide - 1))) monoboard |= 1 << pos2idx(*(p + 8));
@@ -147,12 +146,12 @@ int hashPiece(char* piece)
     while (*piece) type += *piece++;
     switch (type)
     {
-        case 155: return 0; // pawn
-        case 145: return 1; // rook
-        case 150: return 2; // bishop
-        case 144: return 3; // silver general
-        case 148: return 4; // gold general
-        default: return 5; // king (meaningless)
+        case 155: return PAWN;
+        case 145: return ROOK;
+        case 150: return BISHOP;
+        case 144: return SILVER;
+        case 148: return GOLD;
+        default: return KING; // meaningless
     }
 }
 
@@ -191,11 +190,11 @@ void printMove(Move move)
         // placement of a off-board piece
         switch (move >> 8)
         {
-            case 0: printf("%02XFU\n", posExport(move & 0xFF)); break;
-            case 1: printf("%02XHI\n", posExport(move & 0xFF)); break;
-            case 2: printf("%02XKK\n", posExport(move & 0xFF)); break;
-            case 3: printf("%02XGI\n", posExport(move & 0xFF)); break;
-            case 4: printf("%02XKI\n", posExport(move & 0xFF)); break;
+            case PAWN: printf("%02XFU\n", posExport(move & 0xFF)); break;
+            case ROOK: printf("%02XHI\n", posExport(move & 0xFF)); break;
+            case BISHOP: printf("%02XKK\n", posExport(move & 0xFF)); break;
+            case SILVER: printf("%02XGI\n", posExport(move & 0xFF)); break;
+            case GOLD: printf("%02XKI\n", posExport(move & 0xFF)); break;
         }
     }
     else if (isPromoted(move & 0xFF))
@@ -225,9 +224,9 @@ int isPromoted(Pos pos) { return ((pos >> 4) < 0x7) ^ ((pos & 0xF) < 0x7); }
 int isPromotableMove(Board board, Move move)
 {
     // return 0 if the given move is not a movement but a placemet (00 - 04)
-    if (move >> 8 < 0x6) return 0;
+    if (move >> 8 <= KING) return 0;
     // return 0 if it is not a promotable piece (king, gold)
-    if (getPos(board, move >> 8) % 0x8 > 3) return 0;
+    if (getPos(board, move >> 8) % 0x8 > SILVER) return 0;
     // return 0 if the given move is already promoted
     if (isPromoted(move >> 8)) return 0;
     if (getPlayer(move) == ATTACKER)
@@ -245,7 +244,22 @@ int isPromotableMove(Board board, Move move)
 int isChecked(Board board, int player)
 {
     Pos king = (getPiece(board, KING) >> (player == ATTACKER ? 0 : 8)) & 0xFF;
-    MonoBoard dangermap = getDangerMap(board, player);
+    Pos* p = (Pos*)&board;
+    // a monoboard with competitor's reachable pos marked
+    MonoBoard dangermap = 0x0;
+
+    for (int i = PAWN; i <= KING; i++, p++)
+    {
+        for (int j = 0; j < 9; j += 8)
+        {
+            // skip player's piece
+            if (getPlayer(*(p + j)) == player) continue;
+            // skip competitor's off-board piece
+            if (*(p + j) == !player * 0xFF) continue;
+            dangermap |= getMovableMap(board, *(p + j), i);
+        }
+    }
+
     return !!(dangermap & (1 << pos2idx(king)));
 }
 
@@ -287,7 +301,7 @@ int getPos(Board board, Pos pos)
     Pos* p =(Pos*)&board;
     pos = pos2digit(pos);
 
-    for (int i = 0; i < 6; i++, p++)
+    for (int i = PAWN; i <= KING; i++, p++)
     {
         if (pos == pos2digit(*p)) return i;
         if (pos == pos2digit(*(p + 8))) return i + 8;
@@ -367,7 +381,7 @@ MonoBoard getMoveMask(Pos pos, Piece piece, int promoted)
     pos = pos2digit(pos);
 
     // promoted silver general and pawn here, return move mask of gold general
-    if (promoted && piece < 4) return getMoveMask(pos, GOLD, 0);
+    if (promoted && piece < GOLD) return getMoveMask(pos, GOLD, 0);
 
     rshift = (int)(pos & 0xF) - 3;
     shift = ((int)(pos >> 4) - 3) * 5 + rshift;
@@ -451,26 +465,6 @@ MonoBoard getPlacableMap(Board board, Piece piece, int player)
     return placablemap;
 }
 
-// danger map
-// return a monoboard with pos which is reachable for competitor marked
-MonoBoard getDangerMap(Board board, int player)
-{
-    Pos* p = (Pos*)&board;
-    MonoBoard dangermap = 0x0;
-
-    for (int i = 0; i < 6; i++, p++)
-    {
-        for (int j = 0; j < 9; j += 8)
-        {
-            if (getPlayer(*(p + j)) == player) continue;
-            if (*(p + j) == !player * 0xFF) continue;
-            dangermap |= getMovableMap(board, *(p + j), i);
-        }
-    }
-
-    return dangermap;
-}
-
 // move list
 // moves: list of possible movements (abundant length supposed)
 // player: attacker or defender
@@ -482,11 +476,12 @@ int getMoveList(Board board, Move* moves, int player)
     Move move;
     MonoBoard markedmap;
 
-    for (int i = 0; i < 6; i++, p++)
+    for (int i = PAWN; i <= KING; i++, p++)
     {
         for (int j = 0; j < 9; j += 8)
         {
             pos = *(p + j);
+            // skip when the pos does not belong to player
             if (getPlayer(pos) != player) continue;
 
             if (pos == player * 0xFF)
@@ -505,6 +500,7 @@ int getMoveList(Board board, Move* moves, int player)
             {
                 if (!(markedmap & (1 << k))) continue;
                 move = pos << 8 | idx2pos(k, player);
+                // skip when the checked state was unsolved or this move will lead to a checked state
                 if (isCheckedMove(board, move)) continue;
 
                 /* codes for repetition check here */
@@ -536,7 +532,7 @@ void setBoard(Board* bp, Move move)
 {
     int piece;
 
-    if ((move >> 8) < 0x5)
+    if ((move >> 8) < KING)
     {
         // placement of a off-board piece
         piece = getPiece(*bp, move >> 8);
@@ -546,7 +542,7 @@ void setBoard(Board* bp, Move move)
     else 
     {
         // movement
-        // take the piece at destination if exits
+        // take the piece at destination if exists
         piece = getPos(*bp, move & 0xFF);
         if (piece != -1) setPos(bp, piece, getPlayer(move) * 0xFF);
         // move the piece at start pos to destination
