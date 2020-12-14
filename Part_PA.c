@@ -4,6 +4,7 @@
 
 #define ATTACKER 0
 #define DEFENDER 1
+#define MAX_MOVES_LEN 300
 
 // enum of piece type (also equals to it's address offset from &Board)
 // offsets of attacker's pieces: 0-6
@@ -226,6 +227,8 @@ int isPromotableMove(Board board, Move move)
     // for placement, getPos will return -1 because there is no piece at 00 01 02 03 04
     // -1 % 0x8 = 7 > 3, thus this function will not recognize placement as a promotable move
     if (getPos(board, move >> 8) % 0x8 > 3) return 0;
+    // return 0 if the given move is already promoted
+    if (isPromoted(move >> 8)) return 0;
     if (getPlayer(move) == ATTACKER)
     {
         return (move >> 12 == 0x5) || ((move & 0xF0) >> 4 == 0x5);
@@ -254,15 +257,12 @@ int isCheckedMove(Board board, Move move)
     return isChecked(board, getPlayer(move));
 }
 
-// return 1 when competitor's king can not avoid being checked else 0
+// return 1 when competitor's king can not avoid being checked by any move else 0
 // AKA 詰み
 int isDecided(Board board, int player)
 {
-    Pos king = (getPiece(board, KING) >> (player == DEFENDER ? 0 : 8)) & 0xFF;
-    MonoBoard dangermap = getDangerMap(board, !player);
-    // competitor has not got checked (purpose of the line below is avoiding generate dangermap twice)
-    if (!(dangermap & (1 << pos2idx(king)))) return 0;
-    return !(~dangermap & getMovableMap(board, king, KING));
+    Move moves[MAX_MOVES_LEN];
+    return !getMoveList(board, moves, !player);
 }
 
 // return 1 when the given move will make competitor's king can not avoid being checked else 0
@@ -414,7 +414,24 @@ MonoBoard getMovableMap(Board board, Pos pos, Piece piece)
 // return a monoboard with placable pos marked
 MonoBoard getPlacableMap(Board board, Piece piece, int player)
 {
+    MonoBoard placablemap = ~monoizedBoard(board, 0);
+    // piece except pawn may place wherever empty
+    if (piece != PAWN) return placablemap;
+    // topmost horizontal line: 0x1F00000, bottommost horizontal line: 0x1F
+    // leftmots vertival line: 0x108421
+    int pos = getPiece(board, piece);
+    if ((pos >> 8) == player * 0xFF) pos &= 0xFF;
+    else if ((pos & 0xFF) == player * 0xFF) pos >>= 8;
+    // avoid attacker and defender's pawns at the same vertical line (二歩)
+    if (getPlayer(pos) != player && !isPromoted(pos))
+    {
+        placablemap &= ~(0x108421 << ((int)(pos & 0xF) - (player == ATTACKER ? 0x1 : 0xA)));
+    }
+    // avoid placing pawn at competitor's position (陣地)
+    placablemap &= ~(player == ATTACKER ? 0x1F00000 : 0x1F);
+    // avoid making decided move by placing a off-board pawn (打ち歩詰め)
     /* codes here */
+    return placablemap;
 }
 
 // danger map
@@ -424,10 +441,14 @@ MonoBoard getDangerMap(Board board, int player)
     Pos* p = (Pos*)&board;
     MonoBoard dangermap = 0x0;
 
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 6; i++, p++)
     {
-        if (getPlayer(*p) != player) dangermap |= getMovableMap(board, *p, i);
-        if (getPlayer(*(p + 8)) != player) dangermap |= getMovableMap(board, *(p + 8), i);
+        for (int j = 0; j < 9; j += 8)
+        {
+            if (getPlayer(*(p + j)) == player) continue;
+            if (*(p + j) == !player * 0xFF) continue;
+            dangermap |= getMovableMap(board, *(p + j), i);
+        }
     }
 
     return dangermap;
@@ -468,10 +489,14 @@ int getMoveList(Board board, Move* moves, int player)
                 if (!((markedmap >> k) & 1)) continue;
                 move = pos << 8 | idx2pos(k, player);
                 if (isCheckedMove(board, move)) continue;
-                *(moves + counter++) = move;
+                // skip move if it's pawn's promotable move
+                if (!(isPromotableMove(board, move) && i == PAWN))
+                {
+                    *(moves + counter++) = move;
+                }
+                // add promotable move additionally
                 if (isPromotableMove(board, move))
                 {
-                    // add promotable move additionally
                     *(moves + counter++) = pos << 8 | pos2promoted(move & 0xFF);
                 }
             }
@@ -495,8 +520,8 @@ void setBoard(Board* bp, Move move)
     {
         // placement of a off-board piece
         piece = getPiece(*bp, move >> 8);
-        if ((piece & 0xFF) == getPlayer(move) * 0xFF) setPos(bp, move >> 8, move & 0xFF);
         if ((piece >> 8) == getPlayer(move) * 0xFF) setPos(bp, (int)(move >> 8) + 8, move & 0xFF);
+        else if ((piece & 0xFF) == getPlayer(move) * 0xFF) setPos(bp, move >> 8, move & 0xFF);
     }
     else 
     {
