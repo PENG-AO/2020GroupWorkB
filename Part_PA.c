@@ -760,7 +760,8 @@ int main(int argc, char** argv)
         count = getMoveList(board, hist, moves);
         if (count == 0) break; // 詰み
         for (int i = 0; i < count; i++) printMove(moves[i]);
-        printf("input = "); move = readMove(board, hist.turn % 2);
+        printf("%s's input = ", (hist.turn % 2) ? "DEFENDER" : "ATTACKER");
+        move = readMove(board, hist.turn % 2);
         hist.past[hist.turn] = updateHash(board, hash, move); // add history
         setBoard(&board, move); // revise board in place
         showBoard(board);
