@@ -96,7 +96,6 @@ int isPromoted(Pos pos);
 int isPromotableMove(Board board, Move move);
 int isChecked(Board board, int player);
 int isCheckedMove(Board board, Move move);
-int isDecided(Board board, History hist);
 int isDecidableMove(Board board, History hist, Move move);
 int isRepetitiveMove(Board board, History hist, Move move);
 int is4CheckableMove(Board board, History hist, Move move);
@@ -400,27 +399,20 @@ int isCheckedMove(Board board, Move move)
     return isChecked(board, getPlayer(move));
 }
 
-// return 1 when player(hist.turn % 2)'s king can not avoid being checked by any move else 0
+// return 1 when the given move will make competitor's king can not avoid being checked else 0
+// competitor of the one who made the given move ↵
+// (legal move supposed)
 // AKA 詰み
-int isDecided(Board board, History hist)
+int isDecidableMove(Board board, History hist, Move move)
 {
+    setBoard(&board, move);
+    hist.past[hist.turn] = hashBoard(board, hist.turn % 2); hist.turn++;
     // though it is feasible without this line
     // a pre-check might make this function faster
     // for getting checked is the prerequisite of 詰み
     if (!isChecked(board, hist.turn % 2)) return 0;
     Move moves[MAX_MOVES_LEN];
     return !getMoveList(board, hist, moves);
-}
-
-// return 1 when the given move will make competitor's king can not avoid being checked else 0
-// competitor of the one who made the given move ↵
-// (legal move supposed)
-int isDecidableMove(Board board, History hist, Move move)
-{
-    setBoard(&board, move);
-    hist.past[hist.turn] = hashBoard(board, hist.turn % 2);
-    hist.turn++;
-    return isDecided(board, hist);
 }
 
 // return 1 when the same board has appeared 4 times after applying the given move else 0
@@ -552,13 +544,12 @@ MonoBoard getMoveMask(Pos pos, Piece piece, int promoted)
     // rshift = n
     int shift, rshift;
     MonoBoard mask = 0x0;
-    pos = pos2digit(pos);
 
     // promoted silver general and pawn here, return move mask of gold general
     if (promoted && piece < GOLD) return getMoveMask(pos, GOLD, 0);
 
-    rshift = (int)(pos & 0xF) - 3;
-    shift = ((int)(pos >> 4) - 3) * 5 + rshift;
+    rshift = (int)(pos2digit(pos) & 0xF) - 3;
+    shift = ((int)(pos2digit(pos) >> 4) - 3) * 5 + rshift;
     if (shift < 0)
     {
         mask |= piecemask[piece + getPlayer(pos) * 8] >> -shift;
@@ -725,4 +716,60 @@ void setBoard(Board* bp, Move move)
         piece = getPos(*bp, a);
         setPos(bp, piece, b);
     }
+}
+
+// for debug
+void showBit(MonoBoard monoboard)
+{
+    for (int i = 20; i >= 0; i -= 5)
+    {
+        for (int j = 0; j < 5; j++) printf("%d", (monoboard >> i >> j) & 1);
+        printf("\n");
+    }
+    printf("\n");
+}
+
+// for debug
+void showBoard(Board board)
+{
+    Pos* p =(Pos*)&board;
+    printf("王 金 銀 角 飛 歩\n");
+    for (int i = 0; i < 9; i += 8) { for (int j = PAWN; j <= KING; j++) printf("%02X ", *(p + i + j)); printf("\n"); }
+}
+
+// demo usage of functions above
+int main(int argc, char** argv)
+{
+    Board board;
+    History hist;
+    Move move, moves[MAX_MOVES_LEN];
+    int count = 0;
+    Key hash;
+
+    initBoard(&board);
+    initHistory(&hist);
+    initHashTable(&table); // globally defined
+
+    printf("original board:\n");
+    hash = hashBoard(board, DEFENDER);
+    showBoard(board);
+    printf("hash = %016llX\n\n", hash);
+
+    while (hist.turn < 1)
+    {
+        count = getMoveList(board, hist, moves);
+        if (count == 0) break; // 詰み
+        for (int i = 0; i < count; i++) printMove(moves[i]);
+        printf("input = "); move = readMove(board, hist.turn % 2);
+        hist.past[hist.turn] = updateHash(board, hash, move); // add history
+        setBoard(&board, move); // revise board in place
+        showBoard(board);
+        printf("hash = %016llX\n\n", hist.past[hist.turn]);
+        hist.turn++;
+    }
+
+    printf("histories:\n");
+    for (int i = 0; i < hist.turn; i++) printf("%03d %016llX\n", i, hist.past[i]);
+
+    return 0;
 }
