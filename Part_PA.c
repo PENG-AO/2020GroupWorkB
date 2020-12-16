@@ -753,9 +753,9 @@ int main(int argc, char** argv)
     printf("original board:\n");
     hash = hashBoard(board, DEFENDER);
     showBoard(board);
-    printf("hash = %016llX\n\n", hash);
+    printf("hash = %016llX\n-----------------------\n", hash);
 
-    while (hist.turn < 1)
+    while (hist.turn < MAX_TURNS_NUM)
     {
         count = getMoveList(board, hist, moves);
         if (count == 0) break; // 詰み
@@ -764,7 +764,7 @@ int main(int argc, char** argv)
         hist.past[hist.turn] = updateHash(board, hash, move); // add history
         setBoard(&board, move); // revise board in place
         showBoard(board);
-        printf("hash = %016llX\n\n", hist.past[hist.turn]);
+        printf("hash = %016llX\n-----------------------\n", hist.past[hist.turn]);
         hist.turn++;
     }
 
