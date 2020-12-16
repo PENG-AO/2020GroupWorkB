@@ -182,7 +182,7 @@ Key hashBoard(Board board, int player)
 
 // return the updated hashed value of board after applying move
 // board: before applying move
-// this function is faster for there is no loop even though it works the same as applying setBoard first then hashBoard
+// this function is faster for there is no loop, even though it works the same as applying setBoard first then hashBoard
 Key updateHash(Board board, Key hash, Move move)
 {
     Pos a = move >> 8, b = move & 0xFF;
@@ -743,8 +743,8 @@ int main(int argc, char** argv)
     Board board;
     History hist;
     Move move, moves[MAX_MOVES_LEN];
-    int count = 0;
-    Key hash;
+    int count = 0; // length of move list
+    Key hash; // hash value of board
 
     initBoard(&board);
     initHistory(&hist);
@@ -762,7 +762,8 @@ int main(int argc, char** argv)
         for (int i = 0; i < count; i++) printMove(moves[i]);
         printf("%s's input = ", (hist.turn % 2) ? "DEFENDER" : "ATTACKER");
         move = readMove(board, hist.turn % 2);
-        hist.past[hist.turn] = updateHash(board, hash, move); // add history
+        hash = updateHash(board, hash, move);
+        hist.past[hist.turn] = hash; // add history
         setBoard(&board, move); // revise board in place
         showBoard(board);
         printf("hash = %016llX\n-----------------------\n", hist.past[hist.turn]);
