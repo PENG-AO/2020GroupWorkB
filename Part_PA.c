@@ -21,7 +21,7 @@ typedef unsigned char Pos;
 //              235B attacker's move, 23 -> from, 5B -> to, 5B -> promoted
 //              0021 attacker's placement, 00 -> pawn, 21 -> at
 //              ABBC defender's move, AB -> from, BC -> to, BC -> no promotion
-//              AB93 defender's move, AB -> from, 93 -> to, 93 -> promoted
+//              ABA3 defender's move, AB -> from, A3 -> to, A3 -> promoted
 //              01CD defender's placement, 01 -> rook, CD -> at
 // methods to obtain some informations
 //     first 2 digits: move >> 8
@@ -72,7 +72,7 @@ Key genKey(void)
         ((Key)rand() << 0x30) & 0xFFFF000000000000;
 }
 
-void initBoard(Board* board);
+void initBoard(Board* bp);
 void initHashTable(HashTable* table);
 void initHistory(History* hist);
 MonoBoard monoizeBoard(Board board, int hide);
@@ -205,7 +205,7 @@ Key updateHash(Board board, Key hash, Move move)
         if (piece != -1)
         {
             // unbind its on-board state
-            hash ^= table.keys[piece % 8 + !player * 10][pos2idx(b)];
+            hash ^= table.keys[piece % 8 + !player * 10 + isPromoted(((Pos*)&board)[piece]) * 6][pos2idx(b)];
             // check the number of player's certain off-board piece
             setPos(&board, piece, player * 0xFF);
             // bind the state of 2 off-board piece
@@ -324,7 +324,7 @@ void printMove(Move move)
             case GOLD: printf("%02XKI\n", posExport(move & 0xFF)); break;
         }
     }
-    else if (isPromoted(move & 0xFF))
+    else if (isPromoted(move >> 8) ^ isPromoted(move & 0xFF))
     {
         // movement with promotion
         printf("%02X%02XN\n", posExport(move >> 8), posExport(move & 0xFF));
@@ -664,7 +664,7 @@ int getMoveList(Board board, History hist, Move* moves)
             for (int k = 0; k < 25; k++)
             {
                 if (!(markedmap & (1 << k))) continue;
-                move = pos << 8 | idx2pos(k, player);
+                move = pos << 8 | (isPromoted(pos) ? pos2promoted(idx2pos(k, player)) : idx2pos(k, player));
                 // skip when the checked state was unsolved or this move will lead to a checked state
                 if (isCheckedMove(board, move)) continue;
                 // skip when attacker will make a repetitive move
@@ -733,45 +733,6 @@ void showBit(MonoBoard monoboard)
 void showBoard(Board board)
 {
     Pos* p =(Pos*)&board;
-    printf("王 金 銀 角 飛 歩\n");
+    printf("歩 飛 角 銀 金 王\n");
     for (int i = 0; i < 9; i += 8) { for (int j = PAWN; j <= KING; j++) printf("%02X ", *(p + i + j)); printf("\n"); }
-}
-
-// demo usage of functions above
-int main(int argc, char** argv)
-{
-    Board board;
-    History hist;
-    Move move, moves[MAX_MOVES_LEN];
-    int count = 0; // length of move list
-    Key hash; // hash value of board
-
-    initBoard(&board);
-    initHistory(&hist);
-    initHashTable(&table); // globally defined
-
-    printf("original board:\n");
-    hash = hashBoard(board, DEFENDER);
-    showBoard(board);
-    printf("hash = %016llX\n-----------------------\n", hash);
-
-    while (hist.turn < MAX_TURNS_NUM)
-    {
-        count = getMoveList(board, hist, moves);
-        if (count == 0) break; // 詰み
-        for (int i = 0; i < count; i++) printMove(moves[i]);
-        printf("%s's input = ", (hist.turn % 2) ? "DEFENDER" : "ATTACKER");
-        move = readMove(board, hist.turn % 2);
-        hash = updateHash(board, hash, move);
-        hist.past[hist.turn] = hash; // add history
-        setBoard(&board, move); // revise board in place
-        showBoard(board);
-        printf("hash = %016llX\n-----------------------\n", hist.past[hist.turn]);
-        hist.turn++;
-    }
-
-    printf("histories:\n");
-    for (int i = 0; i < hist.turn; i++) printf("%03d %016llX\n", i, hist.past[i]);
-
-    return 0;
 }
