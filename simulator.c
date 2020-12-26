@@ -603,9 +603,9 @@ MonoBoard getPlacableMap(Board board, History hist, Piece piece, int player)
     if ((pos >> 8) == player * 0xFF) pos &= 0xFF;
     else if ((pos & 0xFF) == player * 0xFF) pos >>= 8;
     // avoid attacker and defender's pawns at the same vertical line (二歩)
-    if (getPlayer(pos) != player && !isPromoted(pos))
+    if (getPlayer(pos) == player && !isPromoted(pos) && pos != player * 0xFF)
     {
-        shift = (int)(pos & 0xF) - (player == ATTACKER ? 0xA : 0x1);
+        shift = (int)(pos & 0xF) - (player == ATTACKER ? 0x1 : 0xA);
         placablemap &= ~(0x108421 << shift);
     }
     // avoid placing pawn at competitor's position (陣地)
