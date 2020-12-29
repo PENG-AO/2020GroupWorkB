@@ -63,9 +63,10 @@ int convert2alpha(int p) { return (p > 0x7) ? p : (p + 0x9); }
 // swich the half-pos expression between digit and alphabet: 1 -> A -> 1
 int convert2opposite(int p) { return p + ((p < 0x7) ? 0x9 : -0x9); }
 
+// 1st bit for checked mark, left 63bits for random hash key
 Key genKey(void)
 {
-    return
+    return (Key)(~1) &
         ((Key)rand() << 0x00) & 0x000000000000FFFF |
         ((Key)rand() << 0x10) & 0x00000000FFFF0000 |
         ((Key)rand() << 0x20) & 0x0000FFFF00000000 |
@@ -75,9 +76,9 @@ Key genKey(void)
 void initBoard(Board* bp);
 void initHashTable(HashTable* table);
 void initHistory(History* hist);
+
 MonoBoard monoizeBoard(Board board, int hide);
 Key hashBoard(Board board, int player);
-Key updateHash(Board board, Key hash, Move move);
 
 Pos pos2digit(Pos pos);
 Pos pos2alpha(Pos pos);
@@ -98,7 +99,6 @@ int isChecked(Board board, int player);
 int isCheckedMove(Board board, Move move);
 int isDecidableMove(Board board, History hist, Move move);
 int isRepetitiveMove(Board board, History hist, Move move);
-int is4CheckableMove(Board board, History hist, Move move);
 
 int getPlayer(Move move);
 int getPos(Board board, Pos pos);
@@ -177,50 +177,7 @@ Key hashBoard(Board board, int player)
         hash ^= table.keys[i + getPlayer(*(p + 8)) * 10 + isPromoted(*(p + 8)) * 6][pos2idx(*(p + 8))];
     }
 
-    return hash;
-}
-
-// return the updated hashed value of board after applying move
-// board: before applying move
-// this function is faster for there is no loop, even though it works the same as applying setBoard first then hashBoard
-Key updateHash(Board board, Key hash, Move move)
-{
-    Pos a = move >> 8, b = move & 0xFF;
-    int piece, player = getPlayer(move);
-
-    if (a < KING)
-    {
-        // unbind the state of 2 off-board piece
-        if (getPiece(board, a) == player * 0xFFFF) hash ^= table.keys[(int)a + player * 10][26];
-        // bind the state of 1 off-board piece for 2 -> 1
-        // unbind the state of 1 off-board piece for 1 -> 0
-        hash ^= table.keys[(int)a + player * 10][25];
-        // placemnt
-        hash ^= table.keys[(int)a + player * 10][pos2idx(b)];
-    }
-    else
-    {
-        piece = getPos(board, b);
-        // take competitor's piece away
-        if (piece != -1)
-        {
-            // unbind its on-board state
-            hash ^= table.keys[piece % 8 + !player * 10 + isPromoted(((Pos*)&board)[piece]) * 6][pos2idx(b)];
-            // check the number of player's certain off-board piece
-            setPos(&board, piece, player * 0xFF);
-            // bind the state of 2 off-board piece
-            if (getPiece(board, piece % 8) == player * 0xFFFF) hash ^= table.keys[piece % 8 + player * 10][26];
-            // unbind the state of 1 off-board piece for 1 -> 2
-            // bind the state of 1 oof-board piece for 0 -> 1
-            hash ^= table.keys[piece % 8 + player * 10][25];
-        }
-        // movement
-        piece = getPos(board, a) % 8;
-        hash ^= table.keys[piece + player * 10 + isPromoted(a) * 6][pos2idx(a)];
-        hash ^= table.keys[piece + player * 10 + isPromoted(b) * 6][pos2idx(b)];
-    }
-
-    return hash ^ table.attacker ^ table.defender;
+    return hash ^ (isChecked(board, !player) ? (Key)1 : (Key)0);
 }
 
 // return a pos-expression of given pos in digit
@@ -415,9 +372,10 @@ int isDecidableMove(Board board, History hist, Move move)
     return !getMoveList(board, hist, moves);
 }
 
-// return 1 when the same board has appeared 4 times after applying the given move else 0
-// (legal move supposed)
-// AKA 千日手
+// after applying the given move
+// return 1 when the same board pattern has appeared 4 times (AKA 千日手)
+// return 2 when the same checked board pattern has consecutively appeared for 4 times (AKA 連続王手による千日手)
+// else 0
 int isRepetitiveMove(Board board, History hist, Move move)
 {
     int counter = 1;
@@ -425,34 +383,14 @@ int isRepetitiveMove(Board board, History hist, Move move)
     setBoard(&board, move);
     hash = hashBoard(board, hist.turn % 2);
 
-    for (int i = 0; i < hist.turn; i++)
+    // there will not be a same hash value when player is different
+    for (int i = hist.turn; i > 0; i -= 2)
     {
-        counter += hash == hist.past[i];
-        if (counter == 4) return 1;
+        counter += hash == hist.past[i - 1];
+        if ((hash & 1) && counter == 4) return 2;
     }
 
-    return 0;
-}
-
-// return 1 when the same checked pattern has consecutively appeared for 4 times else 0
-// suppose player as the one who made the given move, this function is for checking
-// whether player has used 4 same pattern to make competitor get checked
-// (player's turn currently suppposed)
-// AKA 連続王手による千日手
-int is4CheckableMove(Board board, History hist, Move move)
-{
-    int player = getPlayer(move);
-    Key hash;
-    setBoard(&board, move);
-    if (!isChecked(board, !player)) return 0;
-
-    hash = hashBoard(board, player);
-    for (int i = 2; i <= 6; i += 2)
-    {
-        if (hash != hist.past[hist.turn - i]) return 0;
-    }
-
-    return 1;
+    return counter > 3;
 }
 
 // return the ownership of the given move or pos
@@ -636,7 +574,7 @@ MonoBoard getPlacableMap(Board board, History hist, Piece piece, int player)
 // return the number of possible movement
 int getMoveList(Board board, History hist, Move* moves)
 {
-    int counter = 0, player = hist.turn % 2;
+    int counter = 0, player = hist.turn % 2, rep;
     Pos* p = (Pos*)&board, pos;
     Move move;
     MonoBoard markedmap;
@@ -668,9 +606,10 @@ int getMoveList(Board board, History hist, Move* moves)
                 // skip when the checked state was unsolved or this move will lead to a checked state
                 if (isCheckedMove(board, move)) continue;
                 // skip when attacker will make a repetitive move
-                if ((player == ATTACKER) && isRepetitiveMove(board, hist, move)) continue;
+                rep = isRepetitiveMove(board, hist, move);
+                if (player == ATTACKER && rep) continue;
                 // skip when player has using the same check pattern consecutively for 4 times including this move
-                if (is4CheckableMove(board, hist, move)) continue;
+                if (rep == 2) continue;
                 // skip move if it's pawn's promotable move
                 if (!(isPromotableMove(board, move) && i == PAWN))
                 {
