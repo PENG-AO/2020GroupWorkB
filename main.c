@@ -1,5 +1,28 @@
 #include "simulator.c"
 
+// for debug
+void showBit(MonoBoard monoboard)
+{
+    for (int i = 20; i >= 0; i -= 5)
+    {
+        for (int j = 0; j < 5; j++) printf("%d", (monoboard >> i >> j) & 1);
+        printf("\n");
+    }
+    printf("\n");
+}
+
+// for debug
+void showBoard(Board board)
+{
+    Pos *p = (Pos *)&board;
+    printf("歩 飛 角 銀 金 王\n");
+    for (int i = 0; i < 9; i += 8)
+    {
+        for (int j = PAWN; j <= KING; j++) printf("%02X ", *(p + i + j));
+        printf("\n");
+    }
+}
+
 void printPiece(Piece piece)
 {
     switch (piece)
@@ -77,9 +100,9 @@ void printBoard(Board board)
         }
         printf("|\n");
     }
+
     printf("  -------------------------\n");
     printf("   A    B    C    D    E\n");
-	// off-board piece of attacker
     printf("△ : ");
     for (int i = PAWN; i <= KING; i++)
     {
