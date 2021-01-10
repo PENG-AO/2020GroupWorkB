@@ -378,7 +378,7 @@ int isDecidableMove(Board board, History hist, Move move)
 // else 0
 int isRepetitiveMove(Board board, History hist, Move move)
 {
-    int counter = 1;
+    int counter = 1, check = 1;
     Key hash;
     setBoard(&board, move);
     hash = hashBoard(board, hist.turn % 2);
@@ -387,7 +387,8 @@ int isRepetitiveMove(Board board, History hist, Move move)
     for (int i = hist.turn; i > 0; i -= 2)
     {
         counter += hash == hist.past[i - 1];
-        if ((hash & 1) && counter == 4) return 2;
+        check &= (hash & 1);
+        if (check && counter == 4) return 2;
     }
 
     return counter > 3;
@@ -655,23 +656,4 @@ void setBoard(Board* bp, Move move)
         piece = getPos(*bp, a);
         setPos(bp, piece, b);
     }
-}
-
-// for debug
-void showBit(MonoBoard monoboard)
-{
-    for (int i = 20; i >= 0; i -= 5)
-    {
-        for (int j = 0; j < 5; j++) printf("%d", (monoboard >> i >> j) & 1);
-        printf("\n");
-    }
-    printf("\n");
-}
-
-// for debug
-void showBoard(Board board)
-{
-    Pos* p =(Pos*)&board;
-    printf("歩 飛 角 銀 金 王\n");
-    for (int i = 0; i < 9; i += 8) { for (int j = PAWN; j <= KING; j++) printf("%02X ", *(p + i + j)); printf("\n"); }
 }
